@@ -25,8 +25,10 @@ def is_number(s):
 
 
 def regAllocate(var=None):
-    if isinstance(var, int):
-        return "tempReg-" + str(var)
+    global reg_use
+    if isinstance(var, int) or var is None:
+        reg_use += 1
+        return "tempReg-" + str(reg_use)
     var = str(var)
     if "Reg-" in var:
         return var
@@ -77,21 +79,27 @@ class Statements:
                     result = eval(n1 + item + n2)
                     stack_value.append(result)
                 else:
-                    self.ISA.append((item, regAllocate(0), regAllocate(n1), regAllocate(n2)))
-                    stack_value.append(regAllocate(0))
+                    reg0 = regAllocate()
+                    reg_n1 = regAllocate(n1)
+                    reg_n2 = regAllocate(n2)
+                    self.ISA.append((item, reg0, reg_n1, reg_n2))
+                    stack_value.append(reg0)
             else:
                 stack_value.append(item)  # 数值直接压栈.
         fin = stack_value[0]
         if right:
+            reg1 = regAllocate()
+            reg2 = regAllocate()
             if is_number(fin):
-                self.ISA.append(('lw', regAllocate(2), regAllocate('s0'),
+                self.ISA.append(('lw', reg2, regAllocate('s0'),
                                  self.varSpace[varName] - self.stackTop + int(fin) * 4))
             else:
-                self.ISA.append(('slli', regAllocate(1), fin, 2))
+                self.ISA.append(('slli', reg1, fin, 2))
                 self.ISA.append(
-                    ('addi', regAllocate(2), regAllocate('s0'), self.varSpace[varName] - self.stackTop))
-                self.ISA.append(('add', regAllocate(2), regAllocate(2), regAllocate(1)))
-            return regAllocate(2)
+                    ('addi', reg2, regAllocate('s0'), self.varSpace[varName] - self.stackTop))
+                self.ISA.append(('add', reg2, reg2, reg1))
+                self.ISA.append(('lw', reg2, reg2, 0))
+            return reg2
         else:
             return fin
 
@@ -107,14 +115,15 @@ class Statements:
                             item = '//'
                         stack_value.append(eval(n1 + item + n2))
                     else:
-                        reg2 = regAllocate(n2)
                         reg1 = regAllocate(n1)
-                        if n2 in self.memUse:
-                            reg2 = self.memProcess(n2)
+                        reg2 = regAllocate(n2)
                         if n1 in self.memUse:
                             reg1 = self.memProcess(n1)
-                        self.ISA.append((item, regAllocate(0), reg1, reg2))
-                        stack_value.append(regAllocate(0))
+                        if n2 in self.memUse:
+                            reg2 = self.memProcess(n2)
+                        reg0 = regAllocate()
+                        self.ISA.append((item, reg0, reg1, reg2))
+                        stack_value.append(reg0)
                 else:
                     stack_value.append(item)  # 数值直接压栈.
             rightValue = stack_value[0]
@@ -131,22 +140,25 @@ class Statements:
                 index = self.memProcess(self.left, False)
                 if is_number(index):
                     if is_number(rightValue):
-                        self.ISA.append(('li', regAllocate(0), int(rightValue)))
-                        self.ISA.append(('sw', regAllocate(0), regAllocate('s0'),
+                        reg0 = regAllocate()
+                        self.ISA.append(('li', reg0, int(rightValue)))
+                        self.ISA.append(('sw', reg0, regAllocate('s0'),
                                          self.varSpace[varName] - self.stackTop + int(index) * 4))
                     else:
                         self.ISA.append(('sw', rightValue, regAllocate('s0'),
                                          self.varSpace[varName] - self.stackTop + int(index) * 4))
                 else:
-                    self.ISA.append(('slli', regAllocate(1), index, 2))
+                    reg1 = regAllocate()
+                    reg2 = regAllocate()
+                    self.ISA.append(('slli', reg1, index, 2))
                     self.ISA.append(
-                        ('addi', regAllocate(2), regAllocate('s0'), self.varSpace[varName] - self.stackTop))
-                    self.ISA.append(('add', regAllocate(2), regAllocate(2), regAllocate(1)))
+                        ('addi', reg2, regAllocate('s0'), self.varSpace[varName] - self.stackTop))
+                    self.ISA.append(('add', reg2, reg2, reg1))
                     if is_number(rightValue):
-                        self.ISA.append(('li', regAllocate(1), int(rightValue)))
-                        self.ISA.append(('sw', regAllocate(1), regAllocate(2), 0))
+                        self.ISA.append(('li', reg1, int(rightValue)))
+                        self.ISA.append(('sw', reg1, reg2, 0))
                     else:
-                        self.ISA.append(('sw', rightValue, regAllocate(2), 0))
+                        self.ISA.append(('sw', rightValue, reg2, 0))
         print(self.ISA)
 
 
@@ -272,7 +284,7 @@ if __name__ == "__main__":
     tokenizer.token(" int  abc[10];")
     tokenizer.token("int a;")
     tokenizer.token("int c;")
-    test = tokenizer.token(" a= abc[1]+abc[2];")
+    test = tokenizer.token(" a= abc[c+a]+a;")
     test.process()
     # tokenizer.token(" a += abc[a] + c;")
     # tokenizer.token("++ abc[a+3];")
