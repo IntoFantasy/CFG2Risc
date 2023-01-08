@@ -52,6 +52,10 @@ class Grammar(Enum):
     SelfMinus = 10
 
 
+operation = {Grammar.VarAddAsgn: '+', Grammar.VarMinusAsgn: '-',
+             Grammar.VarMutilAsgn: '*', Grammar.VarDivAsgn: '/'}
+
+
 class Statements:
     def __init__(self, grammar, defVar=None, useVar=None, left=None, right=None, memUse=None, varSpace=None, top=None):
         self.grammar = grammar
@@ -76,7 +80,7 @@ class Statements:
                 if is_number(n1) and is_number(n2):
                     if item == '/':
                         item = '//'
-                    result = eval(n1 + item + n2)
+                    result = str(eval(n1 + item + n2))
                     stack_value.append(result)
                 else:
                     reg0 = regAllocate()
@@ -104,7 +108,8 @@ class Statements:
             return fin
 
     def process(self):
-        if self.grammar == Grammar.VarAsgn:
+        if self.grammar in [Grammar.VarAsgn, Grammar.VarAddAsgn, Grammar.VarMinusAsgn,
+                            Grammar.VarMutilAsgn, Grammar.VarDivAsgn]:
             stack_value = []
             for item in self.right:
                 if item in ['+', '-', '*', '/']:
@@ -113,7 +118,7 @@ class Statements:
                     if is_number(n1) and is_number(n2):
                         if item == '/':
                             item = '//'
-                        stack_value.append(eval(n1 + item + n2))
+                        stack_value.append(str(eval(n1 + item + n2)))
                     else:
                         reg1 = regAllocate(n1)
                         reg2 = regAllocate(n2)
@@ -132,21 +137,44 @@ class Statements:
                 rightValue = self.memProcess(rightValue)
             if self.left in self.varSpace:
                 if is_number(rightValue):
-                    self.ISA.append(('li', regAllocate(self.left), int(rightValue)))
+                    if self.grammar == Grammar.VarAsgn:
+                        self.ISA.append(('li', regAllocate(self.left), int(rightValue)))
+                    else:
+                        self.ISA.append((operation[self.grammar], regAllocate(self.left),
+                                         regAllocate(self.left), int(rightValue)))
                 else:
-                    self.ISA.append(('add', regAllocate(self.left), regAllocate("x0"), rightValue))
+                    if self.grammar == Grammar.VarAsgn:
+                        self.ISA.append(('add', regAllocate(self.left), regAllocate("x0"), rightValue))
+                    else:
+                        self.ISA.append((operation[self.grammar], regAllocate(self.left), regAllocate(self.left), rightValue))
             else:
                 varName = self.left[:self.left.find('[')]
                 index = self.memProcess(self.left, False)
                 if is_number(index):
                     if is_number(rightValue):
                         reg0 = regAllocate()
-                        self.ISA.append(('li', reg0, int(rightValue)))
-                        self.ISA.append(('sw', reg0, regAllocate('s0'),
-                                         self.varSpace[varName] - self.stackTop + int(index) * 4))
+                        if self.grammar == Grammar.VarAsgn:
+                            self.ISA.append(('li', reg0, int(rightValue)))
+                            self.ISA.append(('sw', reg0, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
+                        else:
+                            reg3 = regAllocate()
+                            self.ISA.append(('lw', reg3, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
+                            self.ISA.append((operation[self.grammar], reg3, reg3, int(rightValue)))
+                            self.ISA.append(('sw', reg3, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
                     else:
-                        self.ISA.append(('sw', rightValue, regAllocate('s0'),
-                                         self.varSpace[varName] - self.stackTop + int(index) * 4))
+                        if self.grammar == Grammar.VarAsgn:
+                            self.ISA.append(('sw', rightValue, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
+                        else:
+                            reg3 = regAllocate()
+                            self.ISA.append(('lw', reg3, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
+                            self.ISA.append((operation[self.grammar], reg3, reg3, rightValue))
+                            self.ISA.append(('sw', reg3, regAllocate('s0'),
+                                             self.varSpace[varName] - self.stackTop + int(index) * 4))
                 else:
                     reg1 = regAllocate()
                     reg2 = regAllocate()
@@ -155,10 +183,68 @@ class Statements:
                         ('addi', reg2, regAllocate('s0'), self.varSpace[varName] - self.stackTop))
                     self.ISA.append(('add', reg2, reg2, reg1))
                     if is_number(rightValue):
-                        self.ISA.append(('li', reg1, int(rightValue)))
-                        self.ISA.append(('sw', reg1, reg2, 0))
+                        if self.grammar == Grammar.VarAsgn:
+                            self.ISA.append(('li', reg1, int(rightValue)))
+                            self.ISA.append(('sw', reg1, reg2, 0))
+                        else:
+                            reg3 = regAllocate()
+                            self.ISA.append(('lw', reg3, reg2, 0))
+                            self.ISA.append((operation[self.grammar], reg3, reg3, int(rightValue)))
+                            self.ISA.append(('sw', reg3, reg2, 0))
                     else:
-                        self.ISA.append(('sw', rightValue, reg2, 0))
+                        if self.grammar == Grammar.VarAsgn:
+                            self.ISA.append(('sw', rightValue, reg2, 0))
+                        else:
+                            reg3 = regAllocate()
+                            self.ISA.append(('lw', reg3, reg2, 0))
+                            self.ISA.append((operation[self.grammar], reg3, reg3, reg2))
+                            self.ISA.append(('sw', reg3, reg2, 0))
+        elif self.grammar == Grammar.SelfAdd:
+            if '[' not in self.left:
+                self.ISA.append(('addi', regAllocate(self.left), regAllocate(self.left), 1))
+            else:
+                varName = self.left[:self.left.find('[')]
+                index = self.memProcess(self.left, False)
+                if is_number(index):
+                    reg1 = regAllocate()
+                    self.ISA.append(('lw', reg1, regAllocate('s0'),
+                                     self.varSpace[varName] - self.stackTop + int(index) * 4))
+                    self.ISA.append(('addi', reg1, reg1, 1))
+                    self.ISA.append(('sw', reg1, regAllocate('s0'),
+                                     self.varSpace[varName] - self.stackTop + int(index) * 4))
+                else:
+                    reg1 = regAllocate()
+                    reg2 = regAllocate()
+                    self.ISA.append(('slli', reg1, index, 2))
+                    self.ISA.append(
+                        ('addi', reg2, regAllocate('s0'), self.varSpace[varName] - self.stackTop))
+                    self.ISA.append(('add', reg2, reg2, reg1))
+                    self.ISA.append(('lw', reg1, reg2, 0))
+                    self.ISA.append(('addi', reg1, reg1, 1))
+                    self.ISA.append(('sw', reg1, reg2, 0))
+        elif self.grammar == Grammar.SelfMinus:
+            if '[' not in self.left:
+                self.ISA.append(('addi', regAllocate(self.left), regAllocate(self.left), -1))
+            else:
+                varName = self.left[:self.left.find('[')]
+                index = self.memProcess(self.left, False)
+                if is_number(index):
+                    reg1 = regAllocate()
+                    self.ISA.append(('lw', reg1, regAllocate('s0'),
+                                     self.varSpace[varName] - self.stackTop + int(index) * 4))
+                    self.ISA.append(('addi', reg1, reg1, -1))
+                    self.ISA.append(('sw', reg1, regAllocate('s0'),
+                                     self.varSpace[varName] - self.stackTop + int(index) * 4))
+                else:
+                    reg1 = regAllocate()
+                    reg2 = regAllocate()
+                    self.ISA.append(('slli', reg1, index, 2))
+                    self.ISA.append(
+                        ('addi', reg2, regAllocate('s0'), self.varSpace[varName] - self.stackTop))
+                    self.ISA.append(('add', reg2, reg2, reg1))
+                    self.ISA.append(('lw', reg1, reg2, 0))
+                    self.ISA.append(('addi', reg1, reg1, -1))
+                    self.ISA.append(('sw', reg1, reg2, 0))
         print(self.ISA)
 
 
@@ -248,6 +334,7 @@ class Tokenizer:
 
         if "++" in sentence:
             varName = sentence[2:].strip()
+            left = varName
             useVar = []
             memUse = {}
             if '[' not in varName:
@@ -260,10 +347,12 @@ class Tokenizer:
                 memUse[varName] = expr
                 useVar.extend(use)
             useVar = list(set(useVar))
-            return Statements(Grammar.SelfAdd, defVar=defVar, useVar=useVar, memUse=memUse)
+            return Statements(Grammar.SelfAdd, defVar=defVar, useVar=useVar,
+                              memUse=memUse, left=left, varSpace=self.varSpace, top=self.top)
 
         if "--" in sentence:
             varName = sentence[2:].strip()
+            left = varName
             useVar = []
             memUse = {}
             if '[' not in varName:
@@ -276,7 +365,8 @@ class Tokenizer:
                 memUse[varName] = expr
                 useVar.extend(use)
             useVar = list(set(useVar))
-            return Statements(Grammar.SelfMinus, defVar=defVar, useVar=useVar, memUse=memUse)
+            return Statements(Grammar.SelfMinus, defVar=defVar, useVar=useVar,
+                              memUse=memUse, left=left,varSpace=self.varSpace, top=self.top)
 
 
 if __name__ == "__main__":
@@ -284,7 +374,7 @@ if __name__ == "__main__":
     tokenizer.token(" int  abc[10];")
     tokenizer.token("int a;")
     tokenizer.token("int c;")
-    test = tokenizer.token(" a= abc[c+a]+a;")
+    test = tokenizer.token(" -- abc[a+1+2];")
     test.process()
     # tokenizer.token(" a += abc[a] + c;")
     # tokenizer.token("++ abc[a+3];")
