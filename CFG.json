@@ -1,0 +1,36 @@
+{
+  "Block":
+  [
+    {
+      "block_name": "block0",
+      "block_id": 0,
+      "block_len": 3,
+      "sentence": [
+        "#0 = read_int()",
+        "#1 = $(0)",
+        "#2 = $(0)"
+      ],
+      "out": [
+        {
+          "to": 1,
+          "cond": "if(a>0)",
+          "reverse": false
+        }
+      ]
+    },
+    {
+      "block_name": "block1",
+      "block_id": 1,
+      "block_len": 0,
+      "sentence": [],
+      "out": [
+        {
+          "to": 1,
+          "cond": "if(a>0)",
+          "reverse": true
+        }
+      ]
+    }
+  ]
+
+}
