@@ -48,9 +48,12 @@ def GetInformation(ast):
     elif type(ast) == UnaryOp:
         infor['Op'] = ast.op
         infor['ExprType'] = type(ast.expr)
+        infor['Expr'] = ast.expr
         if type(ast.expr) == ArrayRef:
             infor['Name'] = ast.expr.name.name
             infor['Subscript'] = ast.expr.subscript
+        elif type(ast.expr) == FuncCall:
+            infor['Name'] = ast.expr.name.name
         else:
             infor['Name'] = ast.expr.name
         return infor
@@ -61,6 +64,6 @@ def GetInformation(ast):
 
 
 if __name__ == "__main__":
-    txt = "sort(a, 1);"
+    txt = "sort(a, 1)++;"
     print(getAST(txt))
     print(GetInformation(getAST(txt)))

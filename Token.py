@@ -95,9 +95,8 @@ class Tokenizer:
             self.ISA.append(["lw", targetReg, infor["Name"], subscript])
             return targetReg
         elif nodeType == UnaryOp:
-            if infor['ExprType'] == ID:
-                self.ISA.append([infor['Op'], infor['Name']])
-                return self.regAllocate.allocate(infor['Name'])
+            if infor['ExprType'] != ArrayRef:
+                return self.token(infor['Expr'])
             else:
                 subscript = infor['Subscript']
                 subscript = self.token(subscript)
@@ -106,7 +105,7 @@ class Tokenizer:
         elif nodeType == FuncCall:
             funcName = infor["Name"]
             self.ISA.append(["call", funcName])
-            return self.regAllocate.allocate()
+            return self.regAllocate.allocate(funcName)
 
     def process(self):
         for isa in self.ISA:
@@ -283,7 +282,7 @@ if __name__ == "__main__":
     tokenizer.token(txt)
     txt = "int c[10];"
     tokenizer.token(txt)
-    txt = "a = sort(c);"
+    txt = "a = sort(c)++;"
     # txt = "c[a] *= c[a] + b;"
     tokenizer.token(txt)
     tokenizer.process()
